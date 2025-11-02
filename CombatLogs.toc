@@ -1,0 +1,10 @@
+## Interface: 30300
+## Title: CombatLogs Manager
+## Notes: Automatically manages combat logging based on instance zones
+## Author: YourName
+## Version: 1.0
+## SavedVariables: CombatLogsDB
+## X-Category: Combat
+
+CombatLogs.lua
+CombatLogsGUI.lua
