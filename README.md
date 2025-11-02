@@ -1,6 +1,6 @@
 # CombatLogs Manager
 
-A World of Warcraft 3.3.5 addon that automatically manages combat logging based on instance zones.
+A World of Warcraft 3.3.5 addon that automatically manages combat logging based on instance zones. Made specifically for Ascension Bronzebeard to address lack of Warcraft Logs type platform.
 
 ## Features
 
@@ -129,3 +129,4 @@ WTF\Account\[YourAccountName]\SavedVariables\CombatLogs.lua
 ## Support
 
 For issues or feature requests, check your addon configuration and ensure all files are properly installed in the AddOns directory.
+
