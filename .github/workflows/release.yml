@@ -17,18 +17,19 @@ jobs:
 
       - name: Prepare distribution folder
         run: |
-          # Create a top-level folder named 'CombatLogs' and copy repo files into it,
-          # excluding the .git dir, the .github workflows, and any existing dist folder.
+          # Ensure we create a folder named exactly 'CombatLogs' with the repo contents inside.
           rm -rf dist
           mkdir -p dist/CombatLogs
+          # Copy repo contents into dist/CombatLogs, excluding .git and .github and the dist directory itself.
           rsync -a --exclude='.git' --exclude='.github' --exclude='dist' . dist/CombatLogs/
 
       - name: Create zip (CombatLogs.zip)
         run: |
           cd dist
+          # Create a zip file named exactly CombatLogs.zip whose top-level folder is 'CombatLogs'
           zip -r CombatLogs.zip CombatLogs
 
-      - name: Upload zip as release asset
+      - name: Upload zip as release asset (explicit name)
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ github.event.release.upload_url }}
