@@ -4,18 +4,132 @@
 -- Initialize the addon
 CombatLogs = {}
 CombatLogs.frame = CreateFrame("Frame", "CombatLogsFrame")
+CombatLogs.leavingPopupShown = false  -- Track if we've shown the leaving popup
+
+-- Define the combat log start popup
+StaticPopupDialogs["COMBATLOGS_STARTED"] = {
+    text = "|cff00ff00[Combat Logs]|r\n\nStarting /combatlog Combat Logging.\n\nSee output in your WoW\\Logs folder:\nWoWCombatLog.txt",
+    button1 = "OK",
+    button2 = "Do Not Log",
+    OnAccept = function()
+        -- OK button - do nothing, just dismiss
+    end,
+    OnCancel = function()
+        -- Do Not Log button - stop combat logging
+        if LoggingCombat() then
+            SlashCmdList["COMBATLOG"]("")
+            if CombatLogsDB then
+                CombatLogsDB.currentZoneLogging = false
+            end
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[CombatLogs]|r Logging Stopped")
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+-- Define the leaving zone popup
+StaticPopupDialogs["COMBATLOGS_LEAVING_ZONE"] = {
+    text = "",  -- Will be set dynamically
+    button1 = "Yes, Keep Logging",
+    button2 = "No, Stop Logging",
+    OnAccept = function()
+        -- Keep Logging button - do nothing, just dismiss
+        CombatLogs.leavingPopupShown = false
+    end,
+    OnCancel = function()
+        -- Stop Logging button - stop combat logging
+        CombatLogs.leavingPopupShown = false
+        if LoggingCombat() then
+            SlashCmdList["COMBATLOG"]("")
+            if CombatLogsDB then
+                CombatLogsDB.currentZoneLogging = false
+                CombatLogsDB.lastLoggedZone = nil
+            end
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[CombatLogs]|r Logging Stopped")
+        end
+    end,
+    OnHide = function()
+        -- Do nothing when hidden/dismissed - only stop on explicit button click
+        CombatLogs.leavingPopupShown = false
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = false,  -- Don't allow ESC to close (prevents accidental stop)
+    preferredIndex = 3,
+}
+
+-- Define the changing zone popup (entering new monitored zone while already logging)
+StaticPopupDialogs["COMBATLOGS_CHANGING_ZONE"] = {
+    text = "",  -- Will be set dynamically
+    button1 = "Yes, Keep Logging",
+    button2 = "Start New Log",
+    button3 = "No, Stop Logging",
+    OnAccept = function()
+        -- Keep Logging button - just update the zone and dismiss
+        CombatLogs.leavingPopupShown = false
+        if CombatLogsDB.pendingNewZone then
+            CombatLogsDB.lastLoggedZone = CombatLogsDB.pendingNewZone
+            CombatLogsDB.pendingNewZone = nil
+        end
+    end,
+    OnCancel = function()
+        -- Start New Log button - stop and restart logging
+        CombatLogs.leavingPopupShown = false
+        if LoggingCombat() then
+            SlashCmdList["COMBATLOG"]("")
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[CombatLogs]|r Logging Stopped")
+        end
+        -- Small delay to ensure stop is processed
+        C_Timer.After(0.5, function()
+            if CombatLogsDB.pendingNewZone then
+                local newZone = CombatLogsDB.pendingNewZone
+                CombatLogsDB.pendingNewZone = nil
+                DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[CombatLogs]|r Combat being logged to Logs\\WoWCombatLog.txt for " .. newZone)
+                SlashCmdList["COMBATLOG"]("")
+                CombatLogsDB.currentZoneLogging = true
+                CombatLogsDB.lastLoggedZone = newZone
+            end
+        end)
+    end,
+    OnAlt = function()
+        -- No, Stop Logging button
+        CombatLogs.leavingPopupShown = false
+        if LoggingCombat() then
+            SlashCmdList["COMBATLOG"]("")
+            if CombatLogsDB then
+                CombatLogsDB.currentZoneLogging = false
+                CombatLogsDB.lastLoggedZone = nil
+                CombatLogsDB.pendingNewZone = nil
+            end
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[CombatLogs]|r Logging Stopped")
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = false,
+    preferredIndex = 3,
+}
 
 
--- Set up event handler immediately
+-- Set up event handler immediately 
 CombatLogs.frame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
         local addonName = ...
         if addonName == "CombatLogs" then
             CombatLogs:Initialize()
         end
-    elseif event == "ZONE_CHANGED_NEW_AREA" or event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS" or event == "PLAYER_ENTERING_WORLD" then
+    elseif event == "ZONE_CHANGED_NEW_AREA" then
+        -- Only check zone on major zone changes (after loading screen)
         if CombatLogs.CheckZone then
-            CombatLogs:CheckZone()
+            CombatLogs:CheckZone(event)
+        end
+    elseif event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS" or event == "PLAYER_ENTERING_WORLD" then
+        -- For other events, just check without popup prompts
+        if CombatLogs.CheckZone then
+            CombatLogs:CheckZone(event)
         end
     end
 end)
@@ -75,7 +189,7 @@ function CombatLogs:Initialize()
 end
 
 -- Check current zone and manage combat logging
-function CombatLogs:CheckZone()
+function CombatLogs:CheckZone(event)
     -- First, sync our database state with actual combat logging state
     local actuallyLogging = LoggingCombat()
     if CombatLogsDB.currentZoneLogging ~= actuallyLogging then
@@ -102,11 +216,68 @@ function CombatLogs:CheckZone()
     end
     
     if shouldLog and not CombatLogsDB.currentZoneLogging then
+        -- Entering a monitored zone - start logging
+        -- Reset the leaving popup flag when entering a monitored zone
+        CombatLogs.leavingPopupShown = false
+        
+        -- Close any existing popups before starting logging
+        StaticPopup_Hide("COMBATLOGS_STARTED")
+        StaticPopup_Hide("COMBATLOGS_LEAVING_ZONE")
+        StaticPopup_Hide("COMBATLOGS_CHANGING_ZONE")
+        
         self:StartCombatLog(currentZone)
-    -- Commented out: Don't stop combat logging when leaving monitored zones
-    -- This keeps combat logging active even when outside monitored zones
-    --elseif not shouldLog and CombatLogsDB.currentZoneLogging then
-    --    self:StopCombatLog()
+    elseif shouldLog and CombatLogsDB.currentZoneLogging then
+        -- Already logging and entering a monitored zone
+        local lastZone = CombatLogsDB.lastLoggedZone or "Unknown Zone"
+        
+        -- Check if it's a different zone than what we were logging
+        if lastZone:lower() ~= currentZone:lower() then
+            -- Entering a DIFFERENT monitored zone - show changing zone popup
+            CombatLogs.leavingPopupShown = false
+            StaticPopup_Hide("COMBATLOGS_LEAVING_ZONE")
+            StaticPopup_Hide("COMBATLOGS_STARTED")
+            
+            -- Store the new zone temporarily
+            CombatLogsDB.pendingNewZone = currentZone
+            
+            -- Show the changing zone popup
+            StaticPopupDialogs["COMBATLOGS_CHANGING_ZONE"].text = "|cff00ff00[Combat Logs]|r\n\nYou are now entering a new logging location of\n\"|cff00ffff" .. currentZone .. "|r\"\n\nwhich is different from\n\"|cff00ffff" .. lastZone .. "|r\"\n\nWould you like to keep logging?"
+            StaticPopup_Show("COMBATLOGS_CHANGING_ZONE")
+        else
+            -- Re-entering the same monitored zone - just close leaving popup and confirm
+            CombatLogs.leavingPopupShown = false
+            StaticPopup_Hide("COMBATLOGS_LEAVING_ZONE")
+            CombatLogsDB.lastLoggedZone = currentZone
+            self:Print("Still logging for: " .. currentZone)
+        end
+    elseif not shouldLog and CombatLogsDB.currentZoneLogging and event == "ZONE_CHANGED_NEW_AREA" then
+        -- Leaving a monitored zone while logging - only show popup on major zone change
+        -- Only show popup if we haven't already shown it
+        if not CombatLogs.leavingPopupShown then
+            local lastZone = CombatLogsDB.lastLoggedZone or "Unknown Zone"
+            if not CombatLogsDB.lastLoggedZone then
+                -- Legacy state - save it for future
+                CombatLogsDB.lastLoggedZone = lastZone
+            end
+            
+            -- Close the "STARTED" popup if it's still open, accept it by default (keep logging)
+            StaticPopup_Hide("COMBATLOGS_STARTED")
+            
+            -- Mark that we're showing the popup
+            CombatLogs.leavingPopupShown = true
+            -- Delay showing popup until after zone is fully loaded
+            C_Timer.After(1, function()
+                -- Double-check we're still logging and still not in a monitored zone
+                if CombatLogsDB.currentZoneLogging and LoggingCombat() then
+                    -- Update the text and show the popup
+                    StaticPopupDialogs["COMBATLOGS_LEAVING_ZONE"].text = "|cff00ff00[Combat Logs]|r\n\n|cffff0000Looks like you are leaving|r\n\"" .. lastZone .. "\"\n\nWould you like to keep logging?"
+                    StaticPopup_Show("COMBATLOGS_LEAVING_ZONE")
+                else
+                    -- Conditions changed, reset the flag
+                    CombatLogs.leavingPopupShown = false
+                end
+            end)
+        end
     end
 end
 
@@ -116,6 +287,7 @@ function CombatLogs:StartCombatLog(zoneName)
     if LoggingCombat() then
         self:Print("Combat logging already active for: " .. zoneName)
         CombatLogsDB.currentZoneLogging = true
+        CombatLogsDB.lastLoggedZone = zoneName
         return
     end
     
@@ -123,6 +295,10 @@ function CombatLogs:StartCombatLog(zoneName)
     self:Print("Combat being logged to Logs\\WoWCombatLog.txt for " .. zoneName)
     SlashCmdList["COMBATLOG"]("")
     CombatLogsDB.currentZoneLogging = true
+    CombatLogsDB.lastLoggedZone = zoneName
+    
+    -- Show popup notification
+    StaticPopup_Show("COMBATLOGS_STARTED")
 end
 
 -- Stop combat logging

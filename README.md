@@ -6,6 +6,8 @@ A World of Warcraft 3.3.5 addon that automatically manages combat logging based 
 
 - **Automatic Combat Logging** - Starts combat logging when entering specified zones/instances (/combatlog)
 - **Zone-Based Monitoring** - Configure which zones should trigger combat logging
+- **Smart Zone Transitions** - Intelligent popup system when changing between zones
+- **Multi-Zone Support** - Handles transitions between different monitored zones seamlessly
 - **Persistent Settings** - All settings saved to WTF folder between sessions
 - **CLI Commands** - Complete slash command system for in-game management
 - **Case-Insensitive Matching** - Zone names work regardless of capitalization
@@ -24,7 +26,18 @@ The addon comes pre-configured to monitor these zones:
 
 - Zul'Gurub
 - Molten Core
+- Ruins of Ahn'Qiraj
+- Temple of Ahn'Qiraj
 - Blackwing Lair
+- Ahn'Qiraj
+- Naxxramas
+- Azuregos (PvE)
+- Master's Gastric Pit
+- The Scarab Wall
+- The Scarab Dais
+- Kazzak (PvE)
+- Lord Kazzak (PvE)
+- Soggoth (PvE)
 
 ## Commands
 
@@ -58,6 +71,34 @@ The addon comes pre-configured to monitor these zones:
 2. **Auto-Activation** - When you enter a monitored zone, it automatically runs `/combatlog`
 3. **Continuous Logging** - Combat logging stays active even when leaving monitored zones
 4. **Settings Storage** - All configurations saved to `WTF\Account\[Account]\SavedVariables\CombatLogs.lua`
+
+## Smart Popup System
+
+The addon features an intelligent popup system that handles different zone transition scenarios:
+
+### Entering a Monitored Zone (First Time)
+- Shows a **green "Starting Combat Logs"** popup
+- **Options:**
+  - `OK` - Continue logging
+  - `Do Not Log` - Stop logging immediately
+
+### Leaving a Monitored Zone
+- Shows a **red "Looks like you are leaving"** popup asking if you want to keep logging
+- **Options:**
+  - `Yes, Keep Logging` - Continue logging in the new area
+  - `No, Stop Logging` - Stop combat logging
+
+### Changing Between Monitored Zones
+- When you leave one monitored zone and enter another (e.g., Molten Core → Blackwing Lair)
+- Shows which zone you're leaving and which you're entering
+- **Options:**
+  - `Yes, Keep Logging` - Continue the same log file seamlessly
+  - `Start New Log` - Stop current log and start fresh for the new zone
+  - `No, Stop Logging` - Stop logging entirely
+
+### Auto-Dismiss Behavior
+- Popups automatically close when you change zones to prevent multiple overlapping dialogs
+- Smart detection prevents duplicate popups from appearing
 
 ## GUI Interface
 
